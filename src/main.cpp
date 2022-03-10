@@ -173,7 +173,7 @@ void set_up_lcd()
     delay(250);
     // display.clearDisplay();
     display.setTextSize(4);
-    display.setTextColor(HX8357_MAGENTA);
+    display.setTextColor(HX8357_RED);
     paint_lcd(CREATURE_NAME, "Starting up...");
 
     // Initialize our display vars
