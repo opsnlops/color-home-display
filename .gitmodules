@@ -1,3 +1,0 @@
-[submodule "lib/creatures"]
-	path = lib/creatures
-	url = git@github.com:opsnlops/creature-libs.git
