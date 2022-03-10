@@ -34,7 +34,7 @@ extern "C"
 #include "config.h"
 
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1325.h>
+#include <Adafruit_HX8357.h>
 
 #include "creature.h"
 
@@ -62,10 +62,10 @@ TaskHandle_t localTimeTaskHandler;
 
 uint8_t startup_counter = 0;
 
-#define OLED_CS 5
-#define OLED_RESET 15
-#define OLED_DC 17
-Adafruit_SSD1325 display(OLED_DC, OLED_RESET, OLED_CS);
+#define TFT_CS 33
+#define TFT_DC 38
+#define TFT_RST 1
+Adafruit_HX8357 display = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 // I'll most likely need to figure out a better way to do this, but this will work for now
 char home_status[LCD_WIDTH];
@@ -95,27 +95,44 @@ boolean gDisplayOn = true;
 static Logger l;
 static MQTT mqtt = MQTT(String(CREATURE_NAME));
 
+unsigned long testFillScreen()
+{
+    unsigned long start = micros();
+    display.fillScreen(HX8357_RED);
+    delay(1000);
+    display.fillScreen(HX8357_GREEN);
+    delay(1000);
+    display.fillScreen(HX8357_BLUE);
+    delay(1000);
+    display.fillScreen(HX8357_WHITE);
+    delay(1000);
+    display.fillScreen(HX8357_BLACK);
+    return micros() - start;
+}
+
 // Clear the entire LCD and print a message
 void paint_lcd(String top_line, String bottom_line)
 {
-    display.clearDisplay();
+
+    // display.clearDisplay();
     display.setCursor(0, 0);
     display.println(top_line);
     display.print(bottom_line);
-    display.display();
+    // display.display();
 }
 
 void __show_big_message(String header, String line1, String line2)
 {
-    display.clearDisplay();
+
+    // display.clearDisplay();
     display.setCursor(0, 0);
-    display.setTextSize(2);
-    display.println(header);
     display.setTextSize(1);
+    display.println(header);
+    display.setTextSize(2);
     display.println("");
     display.println(line1);
     display.println(line2);
-    display.display();
+    // display.display();
 }
 
 // Cleanly show an error message
@@ -134,13 +151,29 @@ void show_startup(String line1)
 
 void set_up_lcd()
 {
+
+    uint8_t x = display.readcommand8(HX8357_RDPOWMODE);
+    l.debug("Display Power Mode: %#04x", x);
+    x = display.readcommand8(HX8357_RDMADCTL);
+    l.debug("MADCTL Mode: %#04x", x);
+    x = display.readcommand8(HX8357_RDCOLMOD);
+    l.debug("Pixel Format: %#04x", x);
+    x = display.readcommand8(HX8357_RDDIM);
+    l.debug("Image Format: %#04x", x);
+    x = display.readcommand8(HX8357_RDDSDR);
+    l.debug("Self Diagnostic: %#04x", x);
+
+    testFillScreen();
+
+    display.setRotation(1);
+
     l.info("setting up the OLED display");
-    display.begin();
-    display.display();
+    // display.begin();
+    // display.display();
     delay(250);
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
+    // display.clearDisplay();
+    display.setTextSize(4);
+    display.setTextColor(HX8357_MAGENTA);
     paint_lcd(CREATURE_NAME, "Starting up...");
 
     // Initialize our display vars
@@ -160,6 +193,12 @@ void setup()
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
+
+    // Turn on LDO2 for the display
+    pinMode(21, OUTPUT);
+    digitalWrite(21, HIGH);
+    delay(1000);
+    display.begin();
 
     l.info("--- STARTED UP ---");
 
@@ -493,7 +532,7 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
                     }
 
                     // The display is buffered, so this just means wipe out what's there
-                    display.clearDisplay();
+                    // display.clearDisplay();
 
                     // If the display is off, don't show anything
                     if (gDisplayOn)
@@ -512,7 +551,7 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
                     }
 
                     // Update!
-                    display.display();
+                    // display.display();
                 }
                 else
                 {

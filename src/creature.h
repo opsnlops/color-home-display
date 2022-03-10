@@ -1,8 +1,7 @@
 #pragma once
 
-#define CREATURE_NAME "home-display"
+#define CREATURE_NAME "color-home-display"
 #define CREATURE_POWER "mains"
-#define CREATURE_TOPIC "creatures/home-display"
 
 
 // Toss some things into the global namespace so that the libs can read it
