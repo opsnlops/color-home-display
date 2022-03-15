@@ -3,23 +3,6 @@
 #error This code is intended to run only on the ESP32 board
 #endif
 
-/*
-    Wiring Notes!
-
-    These are GPIO numbers, not pin numbers.
-
-    ESP32           OLED          What
-    15              16            Reset
-    17              4             DC (Data / Command)
-    5               15            CS (Chip Select)
-    18              7             Clock
-    23              8             Data In
-
-
-    Also note that it runs on v3.3, not v5.
-
-*/
-
 #include <Arduino.h>
 #include <Wire.h>
 
@@ -35,6 +18,8 @@ extern "C"
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_HX8357.h>
+#include <Fonts/FreeSans12pt7b.h>
+#include <Fonts/FreeSans18pt7b.h>
 
 #include "creature.h"
 
@@ -68,16 +53,14 @@ uint8_t startup_counter = 0;
 Adafruit_HX8357 display = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 // I'll most likely need to figure out a better way to do this, but this will work for now
-char home_status[LCD_WIDTH];
 char flamethrower_display[LCD_WIDTH];
 char clock_display[LCD_WIDTH];
 char home_message[LCD_WIDTH];
 char temperature[LCD_WIDTH];
 
-// Current state of things
-float gOutsideTemperature = 32.0;
-float gWindSpeed = 0.0;
-float gHousePower = 500.0;
+// Display buffers
+
+// The display is 320x480
 
 /*
     Configuration!
@@ -95,18 +78,13 @@ boolean gDisplayOn = true;
 static Logger l;
 static MQTT mqtt = MQTT(String(CREATURE_NAME));
 
-unsigned long testFillScreen()
+#define BACKGROUND_COLOR HX8357_BLACK
+#define CLOCK_COLOR HX8357_MAGENTA
+
+unsigned long wipeScreen()
 {
     unsigned long start = micros();
-    display.fillScreen(HX8357_RED);
-    delay(1000);
-    display.fillScreen(HX8357_GREEN);
-    delay(1000);
-    display.fillScreen(HX8357_BLUE);
-    delay(1000);
-    display.fillScreen(HX8357_WHITE);
-    delay(1000);
-    display.fillScreen(HX8357_BLACK);
+    display.fillScreen(BACKGROUND_COLOR);
     return micros() - start;
 }
 
@@ -163,21 +141,21 @@ void set_up_lcd()
     x = display.readcommand8(HX8357_RDDSDR);
     l.debug("Self Diagnostic: %#04x", x);
 
-    testFillScreen();
+    wipeScreen();
 
     display.setRotation(1);
 
-    l.info("setting up the OLED display");
+    l.info("setting up the TFT display");
     // display.begin();
     // display.display();
     delay(250);
     // display.clearDisplay();
-    display.setTextSize(4);
+    display.setTextSize(1);
+    display.setFont(&FreeSans12pt7b);
     display.setTextColor(HX8357_RED);
     paint_lcd(CREATURE_NAME, "Starting up...");
 
     // Initialize our display vars
-    memset(home_status, '\0', LCD_WIDTH);
     memset(clock_display, '\0', LCD_WIDTH);
     memset(home_message, '\0', LCD_WIDTH);
     memset(temperature, '\0', LCD_WIDTH);
@@ -286,6 +264,7 @@ void setup()
     mqtt.startHeartbeat();
 
     digitalWrite(LED_BUILTIN, LOW);
+    wipeScreen();
 
     // Start the task to read the queue
     l.debug("starting the message reader task");
@@ -450,20 +429,17 @@ void display_message(const char *topic, const char *message)
 
     else if (strncmp(OUTSIDE_TEMPERATURE_TOPIC, topic, topic_length) == 0)
     {
-        gOutsideTemperature = atof(message);
-        updateHouseStatus();
+        printTemperature(atof(message));
     }
 
     else if (strncmp(OUTSIDE_WIND_SPEED_TOPIC, topic, topic_length) == 0)
     {
-        gWindSpeed = atof(message);
-        updateHouseStatus();
+        printWindspeed(atof(message));
     }
 
     else if (strncmp(HOME_POWER_USE_WATTS, topic, topic_length) == 0)
     {
-        gHousePower = atof(message);
-        updateHouseStatus();
+        printPowerUsed(atof(message));
     }
 
     else if (strncmp(FAMILY_ROOM_FLAMETHROWER_TOPIC, topic, topic_length) == 0)
@@ -495,10 +471,133 @@ void display_message(const char *topic, const char *message)
     }
 }
 
-void updateHouseStatus()
+void printTemperature(float temperature)
 {
-    // Update the array that holds the information for the overall status
-    sprintf(home_status, "%.1fF %.1fMPH %.1fW", gOutsideTemperature, gWindSpeed, gHousePower);
+    // The display is 320x480
+    int canvasWidth = 100;
+    int canvasHeight = 48;
+
+    // Print in the upper left
+    int x = 5;
+    int y = 5;
+
+    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
+    clockCanvas.setTextSize(1);
+    clockCanvas.setFont(&FreeSans18pt7b);
+    clockCanvas.setCursor(6, 35);
+
+    // Create a small buffer
+    char temp[8];
+    memset(temp, '\0,', 8);
+    sprintf(temp, "%.1fF", temperature);
+
+    clockCanvas.print(temp);
+    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_WHITE, BACKGROUND_COLOR);
+}
+
+void printWindspeed(float speed)
+{
+    // The display is 320x480
+    int canvasWidth = 160;
+    int canvasHeight = 48;
+
+    int x = 150;
+    int y = 5;
+
+    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
+    clockCanvas.setTextSize(1);
+    clockCanvas.setFont(&FreeSans18pt7b);
+    clockCanvas.setCursor(6, 35);
+
+    // Create a small buffer
+    char temp[9];
+    memset(temp, '\0,', 9);
+    sprintf(temp, "%.1f MPH", speed);
+
+    clockCanvas.print(temp);
+    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_BLUE, BACKGROUND_COLOR);
+}
+
+void printHouseMessage(char *message)
+{
+    l.debug("printlng a house message");
+
+    // The display is 320x480
+    int canvasWidth = 400;
+    int canvasHeight = 48;
+
+    int x = 15;
+    int y = 180;
+
+    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
+    clockCanvas.setTextSize(1);
+    clockCanvas.setFont(&FreeSans18pt7b);
+    clockCanvas.setCursor(6, 35);
+
+    clockCanvas.print(message);
+    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_CYAN, BACKGROUND_COLOR);
+}
+
+void printFlamethrowerMessage(char *message)
+{
+    l.debug("printlng a flamethower message");
+
+    // The display is 320x480
+    int canvasWidth = 400;
+    int canvasHeight = 48;
+
+    int x = 15;
+    int y = 125;
+
+    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
+    clockCanvas.setTextSize(1);
+    clockCanvas.setFont(&FreeSans18pt7b);
+    clockCanvas.setCursor(6, 35);
+
+    clockCanvas.print(message);
+    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_YELLOW, BACKGROUND_COLOR);
+}
+
+void printPowerUsed(float powerUsed)
+{
+    // The display is 320x480
+    int canvasWidth = 160;
+    int canvasHeight = 48;
+
+    int x = 480 - canvasWidth + 5;
+    int y = 5;
+
+    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
+    clockCanvas.setTextSize(1);
+    clockCanvas.setFont(&FreeSans18pt7b);
+    clockCanvas.setCursor(6, 35);
+
+    // Create a small buffer
+    char temp[8];
+    memset(temp, '\0,', 7);
+    sprintf(temp, "%.0fW", powerUsed);
+
+    clockCanvas.print(temp);
+    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_RED, BACKGROUND_COLOR);
+}
+
+void printTime()
+{
+
+    int canvasWidth = 212;
+    int canvasHeight = 48;
+    // The display is 320x480
+
+    int x = 480 - canvasWidth;
+    int y = 320 - canvasHeight;
+
+    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
+    clockCanvas.setTextSize(1);
+    clockCanvas.setFont(&FreeSans18pt7b);
+    clockCanvas.setCursor(6, 35);
+
+    clockCanvas.print(clock_display);
+    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, CLOCK_COLOR, BACKGROUND_COLOR);
 }
 
 portTASK_FUNCTION(updateDisplayTask, pvParameters)
@@ -519,16 +618,17 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
                     switch (message.type)
                     {
                     case home_event_message:
-                        memcpy(home_message, message.text, LCD_WIDTH);
+                        printHouseMessage(message.text);
                         break;
                     case flamethrower_message:
-                        memcpy(flamethrower_display, message.text, LCD_WIDTH);
+                        printFlamethrowerMessage(message.text);
                         break;
                     case clock_display_message:
                         memcpy(clock_display, message.text, LCD_WIDTH);
                         break;
                     case temperature_message:
-                        memcpy(temperature, message.text, LCD_WIDTH);
+                        printHouseMessage(message.text);
+                        // memcpy(temperature, message.text, LCD_WIDTH);
                     }
 
                     // The display is buffered, so this just means wipe out what's there
@@ -537,7 +637,7 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
                     // If the display is off, don't show anything
                     if (gDisplayOn)
                     {
-                        display.setCursor(0, 0);
+                        /*display.setCursor(0, 0);
                         display.setTextSize(1);
                         display.println(home_status);
                         display.println("");
@@ -546,8 +646,10 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
                         display.println(temperature);
                         display.println("");
                         display.println("");
-                        display.print("          ");
-                        display.println(clock_display);
+                        display.print("          ");*/
+
+                        printTime();
+                        // display.println(clock_display);
                     }
 
                     // Update!
