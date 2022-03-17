@@ -52,7 +52,6 @@ void handle_mqtt_message(char *topic, char *payload, AsyncMqttClientMessagePrope
 
 void printHouseMessage(char* message);
 void printFlamethrowerMessage(char* message);
-void printTime();
 void printTemperature(float temperature);
 void printWindspeed(float speed);
 void printPowerUsed(float powerUsed);

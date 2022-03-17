@@ -16,11 +16,6 @@ extern "C"
 #include "main.h"
 #include "config.h"
 
-#include <Adafruit_GFX.h>
-#include <Adafruit_HX8357.h>
-#include <Fonts/FreeSans12pt7b.h>
-#include <Fonts/FreeSans18pt7b.h>
-
 #include "creature.h"
 
 #include "logging/logging.h"
@@ -33,6 +28,7 @@ extern "C"
 #include "home/data-feed.h"
 
 #include "ota.h"
+#include "screen.h"
 
 using namespace creatures;
 
@@ -46,11 +42,6 @@ TaskHandle_t displayUpdateTaskHandler;
 TaskHandle_t localTimeTaskHandler;
 
 uint8_t startup_counter = 0;
-
-#define TFT_CS 33
-#define TFT_DC 38
-#define TFT_RST 1
-Adafruit_HX8357 display = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 // I'll most likely need to figure out a better way to do this, but this will work for now
 char flamethrower_display[LCD_WIDTH];
@@ -78,29 +69,25 @@ boolean gDisplayOn = true;
 static Logger l;
 static MQTT mqtt = MQTT(String(CREATURE_NAME));
 
-#define BACKGROUND_COLOR HX8357_BLACK
-#define CLOCK_COLOR HX8357_MAGENTA
-
-unsigned long wipeScreen()
-{
-    unsigned long start = micros();
-    display.fillScreen(BACKGROUND_COLOR);
-    return micros() - start;
-}
-
 // Clear the entire LCD and print a message
 void paint_lcd(String top_line, String bottom_line)
 {
+    l.debug("paint_lcd: %s, %s", top_line.c_str(), bottom_line.c_str());
 
     // display.clearDisplay();
     display.setCursor(0, 0);
+    l.verbose("setCursor done");
     display.println(top_line);
+    l.verbose("print top line done");
     display.print(bottom_line);
+    l.verbose("print bottom line done");
     // display.display();
 }
 
 void __show_big_message(String header, String line1, String line2)
 {
+
+    l.debug("__show_big_message");
 
     // display.clearDisplay();
     display.setCursor(0, 0);
@@ -122,6 +109,8 @@ void show_error(String line1, String line2)
 // Cleanly show an error message
 void show_startup(String line1)
 {
+    l.debug("show_startup: %s", line1.c_str());
+
     char buffer[3] = {'\0', '\0', '\0'};
     itoa(startup_counter++, buffer, 10);
     __show_big_message("Booting...", buffer, line1);
@@ -130,25 +119,8 @@ void show_startup(String line1)
 void set_up_lcd()
 {
 
-    uint8_t x = display.readcommand8(HX8357_RDPOWMODE);
-    l.debug("Display Power Mode: %#04x", x);
-    x = display.readcommand8(HX8357_RDMADCTL);
-    l.debug("MADCTL Mode: %#04x", x);
-    x = display.readcommand8(HX8357_RDCOLMOD);
-    l.debug("Pixel Format: %#04x", x);
-    x = display.readcommand8(HX8357_RDDIM);
-    l.debug("Image Format: %#04x", x);
-    x = display.readcommand8(HX8357_RDDSDR);
-    l.debug("Self Diagnostic: %#04x", x);
+    l.debug("in set_up_lcd()");
 
-    wipeScreen();
-
-    display.setRotation(1);
-
-    l.info("setting up the TFT display");
-    // display.begin();
-    // display.display();
-    delay(250);
     // display.clearDisplay();
     display.setTextSize(1);
     display.setFont(&FreeSans12pt7b);
@@ -160,25 +132,21 @@ void set_up_lcd()
     memset(home_message, '\0', LCD_WIDTH);
     memset(temperature, '\0', LCD_WIDTH);
     memset(flamethrower_display, '\0', LCD_WIDTH);
-
-    delay(1000);
 }
 
 void setup()
 {
     // Fire up the logging framework first
     l.init();
+    l.debug("hi, logger!");
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
 
-    // Turn on LDO2 for the display
-    pinMode(21, OUTPUT);
-    digitalWrite(21, HIGH);
-    delay(1000);
-    display.begin();
+    l.debug("firing up the display...");
+    initScreen();
 
-    l.info("--- STARTED UP ---");
+    l.info("Helllllo! I'm up and running on a %s!", ARDUINO_VARIANT);
 
     // Get the display set up
     set_up_lcd();
@@ -481,18 +449,18 @@ void printTemperature(float temperature)
     int x = 5;
     int y = 5;
 
-    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
-    clockCanvas.setTextSize(1);
-    clockCanvas.setFont(&FreeSans18pt7b);
-    clockCanvas.setCursor(6, 35);
+    GFXcanvas1 temperatureCanvas(canvasWidth, canvasHeight);
+    temperatureCanvas.setTextSize(1);
+    temperatureCanvas.setFont(&FreeSans18pt7b);
+    temperatureCanvas.setCursor(6, 35);
 
     // Create a small buffer
     char temp[8];
     memset(temp, '\0,', 8);
     sprintf(temp, "%.1fF", temperature);
 
-    clockCanvas.print(temp);
-    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_WHITE, BACKGROUND_COLOR);
+    temperatureCanvas.print(temp);
+    display.drawBitmap(x, y, temperatureCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_WHITE, BACKGROUND_COLOR);
 }
 
 void printWindspeed(float speed)
@@ -504,18 +472,18 @@ void printWindspeed(float speed)
     int x = 150;
     int y = 5;
 
-    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
-    clockCanvas.setTextSize(1);
-    clockCanvas.setFont(&FreeSans18pt7b);
-    clockCanvas.setCursor(6, 35);
+    GFXcanvas1 windspeedScreen(canvasWidth, canvasHeight);
+    windspeedScreen.setTextSize(1);
+    windspeedScreen.setFont(&FreeSans18pt7b);
+    windspeedScreen.setCursor(6, 35);
 
     // Create a small buffer
     char temp[9];
     memset(temp, '\0,', 9);
     sprintf(temp, "%.1f MPH", speed);
 
-    clockCanvas.print(temp);
-    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_BLUE, BACKGROUND_COLOR);
+    windspeedScreen.print(temp);
+    display.drawBitmap(x, y, windspeedScreen.getBuffer(), canvasWidth, canvasHeight, HX8357_BLUE, BACKGROUND_COLOR);
 }
 
 void printHouseMessage(char *message)
@@ -529,13 +497,13 @@ void printHouseMessage(char *message)
     int x = 15;
     int y = 180;
 
-    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
-    clockCanvas.setTextSize(1);
-    clockCanvas.setFont(&FreeSans18pt7b);
-    clockCanvas.setCursor(6, 35);
+    GFXcanvas1 houseMessageCanvas(canvasWidth, canvasHeight);
+    houseMessageCanvas.setTextSize(1);
+    houseMessageCanvas.setFont(&FreeSans18pt7b);
+    houseMessageCanvas.setCursor(6, 35);
 
-    clockCanvas.print(message);
-    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_CYAN, BACKGROUND_COLOR);
+    houseMessageCanvas.print(message);
+    display.drawBitmap(x, y, houseMessageCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_CYAN, BACKGROUND_COLOR);
 }
 
 void printFlamethrowerMessage(char *message)
@@ -549,13 +517,13 @@ void printFlamethrowerMessage(char *message)
     int x = 15;
     int y = 125;
 
-    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
-    clockCanvas.setTextSize(1);
-    clockCanvas.setFont(&FreeSans18pt7b);
-    clockCanvas.setCursor(6, 35);
+    GFXcanvas1 flamethrowerCanvas(canvasWidth, canvasHeight);
+    flamethrowerCanvas.setTextSize(1);
+    flamethrowerCanvas.setFont(&FreeSans18pt7b);
+    flamethrowerCanvas.setCursor(6, 35);
 
-    clockCanvas.print(message);
-    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_YELLOW, BACKGROUND_COLOR);
+    flamethrowerCanvas.print(message);
+    display.drawBitmap(x, y, flamethrowerCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_YELLOW, BACKGROUND_COLOR);
 }
 
 void printPowerUsed(float powerUsed)
@@ -567,37 +535,18 @@ void printPowerUsed(float powerUsed)
     int x = 480 - canvasWidth + 5;
     int y = 5;
 
-    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
-    clockCanvas.setTextSize(1);
-    clockCanvas.setFont(&FreeSans18pt7b);
-    clockCanvas.setCursor(6, 35);
+    GFXcanvas1 powerUsedCanvas(canvasWidth, canvasHeight);
+    powerUsedCanvas.setTextSize(1);
+    powerUsedCanvas.setFont(&FreeSans18pt7b);
+    powerUsedCanvas.setCursor(6, 35);
 
     // Create a small buffer
     char temp[8];
     memset(temp, '\0,', 7);
     sprintf(temp, "%.0fW", powerUsed);
 
-    clockCanvas.print(temp);
-    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_RED, BACKGROUND_COLOR);
-}
-
-void printTime()
-{
-
-    int canvasWidth = 212;
-    int canvasHeight = 48;
-    // The display is 320x480
-
-    int x = 480 - canvasWidth;
-    int y = 320 - canvasHeight;
-
-    GFXcanvas1 clockCanvas(canvasWidth, canvasHeight);
-    clockCanvas.setTextSize(1);
-    clockCanvas.setFont(&FreeSans18pt7b);
-    clockCanvas.setCursor(6, 35);
-
-    clockCanvas.print(clock_display);
-    display.drawBitmap(x, y, clockCanvas.getBuffer(), canvasWidth, canvasHeight, CLOCK_COLOR, BACKGROUND_COLOR);
+    powerUsedCanvas.print(temp);
+    display.drawBitmap(x, y, powerUsedCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_RED, BACKGROUND_COLOR);
 }
 
 portTASK_FUNCTION(updateDisplayTask, pvParameters)
@@ -648,7 +597,7 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
                         display.println("");
                         display.print("          ");*/
 
-                        printTime();
+                        printTime(clock_display);
                         // display.println(clock_display);
                     }
 

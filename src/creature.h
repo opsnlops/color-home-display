@@ -1,4 +1,6 @@
-#pragma once
+
+#ifndef _APRILS_CREATURES_CREATURE
+#define _APRILS_CREATURES_CREATURE
 
 #define CREATURE_NAME "color-home-display"
 #define CREATURE_POWER "mains"
@@ -9,3 +11,6 @@ const char* gCreatureName = CREATURE_NAME;
 
 // Is the WiFi connected?
 boolean gWifiConnected = false;
+
+
+#endif
