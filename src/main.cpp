@@ -43,15 +43,7 @@ TaskHandle_t localTimeTaskHandler;
 
 uint8_t startup_counter = 0;
 
-// I'll most likely need to figure out a better way to do this, but this will work for now
-char flamethrower_display[LCD_WIDTH];
-char clock_display[LCD_WIDTH];
-char home_message[LCD_WIDTH];
-char temperature[LCD_WIDTH];
-
 // Display buffers
-
-// The display is 320x480
 
 /*
     Configuration!
@@ -68,95 +60,30 @@ boolean gDisplayOn = true;
 // Keep a link to our logger
 static Logger l;
 static MQTT mqtt = MQTT(String(CREATURE_NAME));
-
-// Clear the entire LCD and print a message
-void paint_lcd(String top_line, String bottom_line)
-{
-    l.debug("paint_lcd: %s, %s", top_line.c_str(), bottom_line.c_str());
-
-    // display.clearDisplay();
-    display.setCursor(0, 0);
-    l.verbose("setCursor done");
-    display.println(top_line);
-    l.verbose("print top line done");
-    display.print(bottom_line);
-    l.verbose("print bottom line done");
-    // display.display();
-}
-
-void __show_big_message(String header, String line1, String line2)
-{
-
-    l.debug("__show_big_message");
-
-    // display.clearDisplay();
-    display.setCursor(0, 0);
-    display.setTextSize(1);
-    display.println(header);
-    display.setTextSize(2);
-    display.println("");
-    display.println(line1);
-    display.println(line2);
-    // display.display();
-}
-
-// Cleanly show an error message
-void show_error(String line1, String line2)
-{
-    __show_big_message("Oh no! :(", line1, line2);
-}
-
-// Cleanly show an error message
-void show_startup(String line1)
-{
-    l.debug("show_startup: %s", line1.c_str());
-
-    char buffer[3] = {'\0', '\0', '\0'};
-    itoa(startup_counter++, buffer, 10);
-    __show_big_message("Booting...", buffer, line1);
-}
-
-void set_up_lcd()
-{
-
-    l.debug("in set_up_lcd()");
-
-    // display.clearDisplay();
-    display.setTextSize(1);
-    display.setFont(&FreeSans12pt7b);
-    display.setTextColor(HX8357_RED);
-    paint_lcd(CREATURE_NAME, "Starting up...");
-
-    // Initialize our display vars
-    memset(clock_display, '\0', LCD_WIDTH);
-    memset(home_message, '\0', LCD_WIDTH);
-    memset(temperature, '\0', LCD_WIDTH);
-    memset(flamethrower_display, '\0', LCD_WIDTH);
-}
+TouchDisplay display;
 
 void setup()
 {
     // Fire up the logging framework first
     l.init();
     l.debug("hi, logger!");
+    display = TouchDisplay();
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
 
+    // Fire up the screen
     l.debug("firing up the display...");
-    initScreen();
+    display.initScreen();
+    display.showSystemMessage("display set up");
 
     l.info("Helllllo! I'm up and running on a %s!", ARDUINO_VARIANT);
 
-    // Get the display set up
-    set_up_lcd();
-    show_startup("display set up");
-
-    show_startup("starting up Wifi");
+    display.showSystemMessage("starting up Wifi");
     NetworkConnection network = NetworkConnection();
     if (!network.connectToWiFi())
     {
-        show_error("I can't WiFi :(", "Check provisioning!");
+        display.showError("I can't WiFi :(\nCheck provisioning!");
         while (1)
             ;
     }
@@ -166,24 +93,24 @@ void setup()
     l.debug("displayQueue made");
 
     // Register ourselves in mDNS
-    show_startup("Starting in mDNS");
+    display.showSystemMessage("Starting in mDNS");
     CreatureMDNS creatureMDNS = CreatureMDNS(CREATURE_NAME, CREATURE_POWER);
     creatureMDNS.registerService(666);
     creatureMDNS.addStandardTags();
 
     // Set the time
-    show_startup("Setting time");
+    display.showSystemMessage("Setting time");
     Time time = Time();
     time.init();
     time.obtainTime();
 
     // Get the location of the magic broker
-    show_startup("Finding the broker");
+    display.showSystemMessage("Finding the broker");
     MagicBroker magicBroker;
     magicBroker.find();
 
     // Connect to MQTT
-    show_startup("Starting MQTT");
+    display.showSystemMessage("Starting MQTT");
     mqtt.connect(magicBroker.ipAddress, magicBroker.port);
     mqtt.subscribe(String("cmd"), 0);
     mqtt.subscribe(String("config"), 0);
@@ -206,44 +133,40 @@ void setup()
     // l.debug("created the timers");
     // show_startup("timers made");
 
-    xTaskCreatePinnedToCore(updateDisplayTask,
-                            "updateDisplayTask",
-                            10240,
-                            NULL,
-                            2,
-                            &displayUpdateTaskHandler,
-                            1);
+    xTaskCreate(updateDisplayTask,
+                "updateDisplayTask",
+                10240,
+                NULL,
+                2,
+                &displayUpdateTaskHandler);
 
     xTaskCreate(printLocalTimeTask,
                 "printLocalTimeTask",
-                2048,
+                4096,
                 NULL,
                 1,
                 &localTimeTaskHandler);
 
-    show_startup("tasks running");
-
     // Enable OTA
-    setup_ota(String(CREATURE_NAME));
-    start_ota();
+    // setup_ota(String(CREATURE_NAME));
+    // start_ota();
 
     // Tell MQTT we're alive
     mqtt.publish(String("status"), String("I'm alive!!"), 0, false);
     mqtt.startHeartbeat();
 
     digitalWrite(LED_BUILTIN, LOW);
-    wipeScreen();
+    display.wipeScreen();
 
     // Start the task to read the queue
     l.debug("starting the message reader task");
     TaskHandle_t messageReaderTaskHandle;
-    xTaskCreatePinnedToCore(messageQueueReaderTask,
-                            "messageQueueReaderTask",
-                            10240,
-                            NULL,
-                            1,
-                            &messageReaderTaskHandle,
-                            1);
+    xTaskCreate(messageQueueReaderTask,
+                "messageQueueReaderTask",
+                10240,
+                NULL,
+                1,
+                &messageReaderTaskHandle);
 }
 
 // Stolen from StackOverflow
@@ -397,17 +320,17 @@ void display_message(const char *topic, const char *message)
 
     else if (strncmp(OUTSIDE_TEMPERATURE_TOPIC, topic, topic_length) == 0)
     {
-        printTemperature(atof(message));
+        display.printTemperature(atof(message));
     }
 
     else if (strncmp(OUTSIDE_WIND_SPEED_TOPIC, topic, topic_length) == 0)
     {
-        printWindspeed(atof(message));
+        display.printWindspeed(atof(message));
     }
 
     else if (strncmp(HOME_POWER_USE_WATTS, topic, topic_length) == 0)
     {
-        printPowerUsed(atof(message));
+        display.printPowerUsed(atof(message));
     }
 
     else if (strncmp(FAMILY_ROOM_FLAMETHROWER_TOPIC, topic, topic_length) == 0)
@@ -439,116 +362,6 @@ void display_message(const char *topic, const char *message)
     }
 }
 
-void printTemperature(float temperature)
-{
-    // The display is 320x480
-    int canvasWidth = 100;
-    int canvasHeight = 48;
-
-    // Print in the upper left
-    int x = 5;
-    int y = 5;
-
-    GFXcanvas1 temperatureCanvas(canvasWidth, canvasHeight);
-    temperatureCanvas.setTextSize(1);
-    temperatureCanvas.setFont(&FreeSans18pt7b);
-    temperatureCanvas.setCursor(6, 35);
-
-    // Create a small buffer
-    char temp[8];
-    memset(temp, '\0,', 8);
-    sprintf(temp, "%.1fF", temperature);
-
-    temperatureCanvas.print(temp);
-    display.drawBitmap(x, y, temperatureCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_WHITE, BACKGROUND_COLOR);
-}
-
-void printWindspeed(float speed)
-{
-    // The display is 320x480
-    int canvasWidth = 160;
-    int canvasHeight = 48;
-
-    int x = 150;
-    int y = 5;
-
-    GFXcanvas1 windspeedScreen(canvasWidth, canvasHeight);
-    windspeedScreen.setTextSize(1);
-    windspeedScreen.setFont(&FreeSans18pt7b);
-    windspeedScreen.setCursor(6, 35);
-
-    // Create a small buffer
-    char temp[9];
-    memset(temp, '\0,', 9);
-    sprintf(temp, "%.1f MPH", speed);
-
-    windspeedScreen.print(temp);
-    display.drawBitmap(x, y, windspeedScreen.getBuffer(), canvasWidth, canvasHeight, HX8357_BLUE, BACKGROUND_COLOR);
-}
-
-void printHouseMessage(char *message)
-{
-    l.debug("printlng a house message");
-
-    // The display is 320x480
-    int canvasWidth = 400;
-    int canvasHeight = 48;
-
-    int x = 15;
-    int y = 180;
-
-    GFXcanvas1 houseMessageCanvas(canvasWidth, canvasHeight);
-    houseMessageCanvas.setTextSize(1);
-    houseMessageCanvas.setFont(&FreeSans18pt7b);
-    houseMessageCanvas.setCursor(6, 35);
-
-    houseMessageCanvas.print(message);
-    display.drawBitmap(x, y, houseMessageCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_CYAN, BACKGROUND_COLOR);
-}
-
-void printFlamethrowerMessage(char *message)
-{
-    l.debug("printlng a flamethower message");
-
-    // The display is 320x480
-    int canvasWidth = 400;
-    int canvasHeight = 48;
-
-    int x = 15;
-    int y = 125;
-
-    GFXcanvas1 flamethrowerCanvas(canvasWidth, canvasHeight);
-    flamethrowerCanvas.setTextSize(1);
-    flamethrowerCanvas.setFont(&FreeSans18pt7b);
-    flamethrowerCanvas.setCursor(6, 35);
-
-    flamethrowerCanvas.print(message);
-    display.drawBitmap(x, y, flamethrowerCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_YELLOW, BACKGROUND_COLOR);
-}
-
-void printPowerUsed(float powerUsed)
-{
-    // The display is 320x480
-    int canvasWidth = 160;
-    int canvasHeight = 48;
-
-    int x = 480 - canvasWidth + 5;
-    int y = 5;
-
-    GFXcanvas1 powerUsedCanvas(canvasWidth, canvasHeight);
-    powerUsedCanvas.setTextSize(1);
-    powerUsedCanvas.setFont(&FreeSans18pt7b);
-    powerUsedCanvas.setCursor(6, 35);
-
-    // Create a small buffer
-    char temp[8];
-    memset(temp, '\0,', 7);
-    sprintf(temp, "%.0fW", powerUsed);
-
-    powerUsedCanvas.print(temp);
-    display.drawBitmap(x, y, powerUsedCanvas.getBuffer(), canvasWidth, canvasHeight, HX8357_RED, BACKGROUND_COLOR);
-}
-
 portTASK_FUNCTION(updateDisplayTask, pvParameters)
 {
 
@@ -561,48 +374,26 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
             if (xQueueReceive(displayQueue, &message, (TickType_t)10) == pdPASS)
             {
 
+                // TODO: Handle gDisplay being off
+
                 if (message.text != NULL)
                 {
                     l.verbose("got a message: %s", message.text);
                     switch (message.type)
                     {
                     case home_event_message:
-                        printHouseMessage(message.text);
+                        display.printHouseMessage(message.text);
                         break;
                     case flamethrower_message:
-                        printFlamethrowerMessage(message.text);
+                        display.printFlamethrowerMessage(message.text);
                         break;
                     case clock_display_message:
-                        memcpy(clock_display, message.text, LCD_WIDTH);
+                        display.printTime(message.text);
                         break;
                     case temperature_message:
-                        printHouseMessage(message.text);
-                        // memcpy(temperature, message.text, LCD_WIDTH);
+                        display.printHouseMessage(message.text);
+                        break;
                     }
-
-                    // The display is buffered, so this just means wipe out what's there
-                    // display.clearDisplay();
-
-                    // If the display is off, don't show anything
-                    if (gDisplayOn)
-                    {
-                        /*display.setCursor(0, 0);
-                        display.setTextSize(1);
-                        display.println(home_status);
-                        display.println("");
-                        display.println(flamethrower_display);
-                        display.println(home_message);
-                        display.println(temperature);
-                        display.println("");
-                        display.println("");
-                        display.print("          ");*/
-
-                        printTime(clock_display);
-                        // display.println(clock_display);
-                    }
-
-                    // Update!
-                    // display.display();
                 }
                 else
                 {
@@ -615,29 +406,25 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
 }
 
 // Create a task to add the local time to the queue to print
-void printLocalTimeTask(void *pvParameters)
+portTASK_FUNCTION(printLocalTimeTask, pvParameters)
 {
-    struct tm timeinfo;
+    Time time = Time();
 
     for (;;)
     {
-        if (getLocalTime(&timeinfo))
-        {
+        l.verbose("tick");
 
-            struct DisplayMessage message;
-            message.type = clock_display_message;
+        String currentTime = time.getCurrentTime("%I:%M:%S %p");
 
-            strftime(message.text, LCD_WIDTH, "%I:%M:%S %p", &timeinfo);
-            l.verbose("Current time: %s", message.text);
+        struct DisplayMessage message;
+        message.type = clock_display_message;
+        memcpy(message.text, currentTime.c_str(), currentTime.length());
 
-            // Drop this message into the queue, giving up after 500ms if there's no
-            // space in the queue
-            xQueueSendToBack(displayQueue, &message, pdMS_TO_TICKS(500));
-        }
-        else
-        {
-            l.warning("Failed to obtain time");
-        }
+        l.verbose("Current time: %s", message.text);
+
+        // Drop this message into the queue, giving up after 500ms if there's no
+        // space in the queue
+        xQueueSendToBack(displayQueue, &message, pdMS_TO_TICKS(500));
 
         // Wait before repeating
         vTaskDelay(TickType_t pdMS_TO_TICKS(1000));

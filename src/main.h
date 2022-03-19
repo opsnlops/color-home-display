@@ -16,7 +16,7 @@ extern "C"
 
 #include <AsyncMqttClient.h>
 
-#define LCD_WIDTH 40
+#define LCD_WIDTH 30
 #define DISPLAY_QUEUE_LENGTH 5
 
 
@@ -37,24 +37,18 @@ struct DisplayMessage
 
 
 char *ultoa(unsigned long val, char *s);
-void set_up_lcd();
-void show_startup(String line1);
-void show_error(String line1, String line2);
-void paint_lcd(String top_line, String bottom_line);
-void printLocalTimeTask(void *pvParameters);
+
+
 void updateHouseStatus();
 void print_flamethrower(const char *room, boolean on);
 
 void print_temperature(const char *room, const char *temperature);
-void display_message(const char *topic, const char *message);
 
 void handle_mqtt_message(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total);
 
-void printHouseMessage(char* message);
 void printFlamethrowerMessage(char* message);
-void printTemperature(float temperature);
-void printWindspeed(float speed);
-void printPowerUsed(float powerUsed);
 
+
+portTASK_FUNCTION_PROTO(printLocalTimeTask, pvParameters);
 portTASK_FUNCTION_PROTO(messageQueueReaderTask, pvParameters);
 portTASK_FUNCTION_PROTO(updateDisplayTask, pvParameters);
