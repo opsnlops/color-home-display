@@ -59,8 +59,12 @@ boolean gDisplayOn = true;
 
 // Keep a link to our logger
 static Logger l;
-static MQTT mqtt = MQTT(String(CREATURE_NAME));
+
 TouchDisplay display;
+
+CreatureMDNS* creatureMDNS;
+Time* creatureTime;
+MQTT* mqtt;
 
 void setup()
 {
@@ -94,15 +98,15 @@ void setup()
 
     // Register ourselves in mDNS
     display.showSystemMessage("Starting in mDNS");
-    CreatureMDNS creatureMDNS = CreatureMDNS(CREATURE_NAME, CREATURE_POWER);
-    creatureMDNS.registerService(666);
-    creatureMDNS.addStandardTags();
+    creatureMDNS = new CreatureMDNS(CREATURE_NAME, CREATURE_POWER);
+    creatureMDNS->registerService(666);
+    creatureMDNS->addStandardTags();
 
     // Set the time
     display.showSystemMessage("Setting time");
-    Time time = Time();
-    time.init();
-    time.obtainTime();
+    creatureTime = new Time();
+    creatureTime->init();
+    creatureTime->obtainTime();
 
     // Get the location of the magic broker
     display.showSystemMessage("Finding the broker");
@@ -111,22 +115,23 @@ void setup()
 
     // Connect to MQTT
     display.showSystemMessage("Starting MQTT");
-    mqtt.connect(magicBroker.ipAddress, magicBroker.port);
-    mqtt.subscribe(String("cmd"), 0);
-    mqtt.subscribe(String("config"), 0);
+    mqtt = new MQTT(String(CREATURE_NAME));
+    mqtt->connect(magicBroker.ipAddress, magicBroker.port);
+    mqtt->subscribe(String("cmd"), 0);
+    mqtt->subscribe(String("config"), 0);
 
-    mqtt.subscribeGlobalNamespace(OUTSIDE_TEMPERATURE_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(OUTSIDE_WIND_SPEED_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(HOME_POWER_USE_WATTS, 0);
+    mqtt->subscribeGlobalNamespace(OUTSIDE_TEMPERATURE_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(OUTSIDE_WIND_SPEED_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(HOME_POWER_USE_WATTS, 0);
 
-    mqtt.subscribeGlobalNamespace(BUNNYS_ROOM_TEMPERATURE_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(FAMILY_ROOM_TEMPERATURE_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(GUEST_ROOM_TEMPERATURE_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(KITCHEN_TEMPERATURE_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(OFFICE_TEMPERATURE_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(BUNNYS_ROOM_TEMPERATURE_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(FAMILY_ROOM_TEMPERATURE_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(GUEST_ROOM_TEMPERATURE_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(KITCHEN_TEMPERATURE_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(OFFICE_TEMPERATURE_TOPIC, 0);
 
-    mqtt.subscribeGlobalNamespace(FAMILY_ROOM_FLAMETHROWER_TOPIC, 0);
-    mqtt.subscribeGlobalNamespace(OFFICE_FLAMETHROWER_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(FAMILY_ROOM_FLAMETHROWER_TOPIC, 0);
+    mqtt->subscribeGlobalNamespace(OFFICE_FLAMETHROWER_TOPIC, 0);
 
     // mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void *)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
     // wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void *)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWiFi));
@@ -152,8 +157,8 @@ void setup()
     // start_ota();
 
     // Tell MQTT we're alive
-    mqtt.publish(String("status"), String("I'm alive!!"), 0, false);
-    mqtt.startHeartbeat();
+    mqtt->publish(String("status"), String("I'm alive!!"), 0, false);
+    mqtt->startHeartbeat();
 
     digitalWrite(LED_BUILTIN, LOW);
     display.wipeScreen();
@@ -408,13 +413,11 @@ portTASK_FUNCTION(updateDisplayTask, pvParameters)
 // Create a task to add the local time to the queue to print
 portTASK_FUNCTION(printLocalTimeTask, pvParameters)
 {
-    Time time = Time();
-
     for (;;)
     {
         l.verbose("tick");
 
-        String currentTime = time.getCurrentTime("%I:%M:%S %p");
+        String currentTime = creatureTime->getCurrentTime("%I:%M:%S %p");
 
         struct DisplayMessage message;
         message.type = clock_display_message;
@@ -435,7 +438,7 @@ portTASK_FUNCTION(printLocalTimeTask, pvParameters)
 portTASK_FUNCTION(messageQueueReaderTask, pvParameters)
 {
 
-    QueueHandle_t incomingQueue = mqtt.getIncomingMessageQueue();
+    QueueHandle_t incomingQueue = mqtt->getIncomingMessageQueue();
     for (;;)
     {
         struct MqttMessage message;
